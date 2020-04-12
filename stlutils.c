@@ -418,19 +418,43 @@ struct pushedBlock {
 } *pushedRoot = NULL;
 
 void pushTriangles(uint32_t n, triangle *trs) {
+  if (trs == NULL) {
+    if (debug) {
+      printf("Tried to push NULL, call skippef\n");
+    }
+    return;
+  }
   if (debug) {
-    printf("Pushing %d triangles\n", n);
+    printf("Pushing %d triangles to %d\n", n,nPushed);
   }
   int i;
   struct pushedBlock *block = malloc(sizeof(struct pushedBlock));
+  if (block == NULL) {
+    fprintf(stderr, "pushTriagles: malloc1() failed\n");
+    return;
+  }
+  block->trs = malloc(n*sizeof(triangle));
+  if (block->trs == NULL) {
+    fprintf(stderr, "pushTriagles: malloc1() failed\n");
+    return;
+  }
+  if (debug) {
+    printf("pushTriangles: allocated\n");
+  }
   nPushed += n;
   block->next = pushedRoot;
   block->n = n;
   pushedRoot = block;
-  block->trs = malloc(n*sizeof(triangle));
+  if (debug) {
+    printf("pushTriangles: chained\n");
+  }
   for (i=0; i<n; ++i) {
     block->trs[i] = trs[i];
   }
+  if (debug) {
+    printf("pushTriangles: data copied\n");
+  }
+
 } 
 
 void writeAllPushedTriangles(FILE *f) {

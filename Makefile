@@ -15,6 +15,9 @@ trig: trig.c grprimitives.o stlutils.o
 ladders: ladders.c grprimitives.o stlutils.o
 	$(CC) -o ladders ladders.c grprimitives.o stlutils.o -lm
 
+hilbert: hilbert.c grprimitives.o stlutils.o
+	$(CC) -o hilbert hilbert.c grprimitives.o stlutils.o -lm
+
 clean:
-	rm *.o makestl trig ladders *~
+	rm *.o makestl trig ladders hilbert *~
 
