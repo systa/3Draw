@@ -15,6 +15,9 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH RE
 #include "grprimitives.h"
 
 int debug = 0;
+#define RANDOM 0
+#define HOR_OR_VER 1
+
 
 
 // Testing if running on big- or little-endian
@@ -240,6 +243,15 @@ void printTriangle(triangle tr) {
   }
 }
 
+// Copy a vector
+void copyVec(int n, double v1[], double v2[]) {
+  int i;
+  for (i=0; i<n; ++i) {
+    v2[i] = v1[i];
+  }
+}
+
+
 
 // Calculate unit normal vector or a triagle
 // "norm" is a an out-parameter
@@ -264,6 +276,59 @@ void fillTriangle(triangle *tr, double p1[], double p2[], double p3[],
   }
   tr->attrByteCount = 0;
 }  
+
+/*
+ * Create a rotation matrix around unit vector
+ * Should be IdentityMatrix + C*sin(a) + C^2(1-cos(a)
+ */
+void createRotationMatrix(double uv[], double angle, double result [][3]) {
+  double C[3][3];
+  double temp[3][3];
+  double s = sin(angle);
+  double c = cos(angle);
+  int i,j,k;
+  C[0][0]=0; C[0][1]=0-uv[2]; C[0][2]=uv[1];
+  C[1][0]=uv[2]; C[1][1]=0; C[1][2]=0-uv[0];
+  C[2][0]=0-uv[1]; C[2][1]=uv[0]; C[2][2]=0;
+  for (i=0; i<3; ++i) {
+    for (j=0; j<3; ++j) {
+      result[i][j] = (i==j)?1.0:0.0;
+    }
+  }
+  for (i=0; i<3; ++i) {
+    for (j=0; j<3; ++j) {
+      result[i][j] += C[i][j]*s;
+    }
+  }
+  // Next temp = C^2;
+  for (i=0; i<3; ++i) {
+    for (j=0; j<3; ++j) {
+      temp[i][j] = 0.0;
+      for (k=0; k<3; ++k) {
+	temp[i][j] += C[i][k]*C[k][j];
+      }
+    }
+  }
+  for (i=0; i<3; ++i) {
+    for (j=0; j<3; ++j) {
+      result[i][j] += temp[i][j]*(1-c);
+    }
+  }
+}
+
+void rotateAround(double uv[], double angle, double target[]) {
+  double M[3][3];
+  double temp[3];
+  int i,j;
+  copyVec(3, target, temp);
+  createRotationMatrix(uv, angle, M);
+  for (i=0; i<3; ++i) {
+    target[i] = 0.0;
+    for (j=0; j<3; ++j) {
+      target[i] += M[i][j]*temp[j];
+    }
+  }
+}
 
 /*
  * Box defined with 8 corner points. Assume that points 0,1,2,3 (clockwise)
@@ -320,46 +385,122 @@ triangle *createBox(double points[][3] ) {
 }
 
 
-// Copy a vector
-void copyVec(int n, double v1[], double v2[]) {
-  int i;
-  for (i=0; i<n; ++i) {
-    v2[i] = v1[i];
-  }
-}
-
 // Implementation of the line
-triangle *createStick(double points[ ][3], double wid ) {
+triangle *createStick(double points[ ][3], double wid, endtype endStrategy ) {
   double vec0[3], vec0Unit[3], vecTmp[3], vecPer1[3], vecPer2[3], tmp;
+  double uv[3];
+  static double angle=0.0;
   double box[8][3];
   int i;
+  // First we create a vector from one end of stick to the one end
   vectorOfVertices(points[0], points[1], vec0);
 
-  /*
-   * A home cooked way to find perpendicular vector. First find a different
-   * vector vecTmp and then a normal to vec0 and vecTmp. Then a normal (vecPer1)
-   * to vec0 and vecTmp and finally normal to vec0 and vecPer1.
-   */
-  copyVec(3, vec0, vecTmp);
-  if (vecTmp[0] != vecTmp[1]) {
-    tmp = vecTmp[0];
-    vecTmp[0] = vecTmp[1];
-    vecTmp[1] = tmp;
-  } else if (vecTmp[0] != vecTmp[2]) {
-    tmp = vecTmp[0];
-    vecTmp[0] = vecTmp[2];
-    vecTmp[2] = tmp;
-  } else if (vecTmp[2] != vecTmp[1]) {
-    tmp = vecTmp[2];
+  // Then we have challege to create the faces (squares) at both ends.
+
+  if (endStrategy == RANDOM) {
+    // The first option is bit random way
+    /*
+     * A home cooked way to find perpendicular vector. First find a different
+     * vector vecTmp and then a normal to vec0 and vecTmp. Then a normal (vecPer1)
+     * to vec0 and vecTmp and finally normal to vec0 and vecPer1.
+     */
+    copyVec(3, vec0, vecTmp);
+    if (vecTmp[0] != vecTmp[1]) {
+      tmp = vecTmp[0];
+      vecTmp[0] = vecTmp[1];
+      vecTmp[1] = tmp;
+    } else if (vecTmp[0] != vecTmp[2]) {
+      tmp = vecTmp[0];
+      vecTmp[0] = vecTmp[2];
+      vecTmp[2] = tmp;
+    } else if (vecTmp[2] != vecTmp[1]) {
+      tmp = vecTmp[2];
     vecTmp[2] = vecTmp[1];
     vecTmp[1] = tmp;
-  } else {
-    return NULL;
+    } else {
+      return NULL;
+    }
+    calculateNormal(vec0, vecTmp, vecPer1);
+    calculateNormal(vec0, vecPer1, vecPer2);
+    if (debug) {
+      printf("Vec : %5.2f, %5.2f, %5.2f\n", vecPer1[0], vecPer1[1], vecPer1[2]);
+    }
+    scaleToUnit(vec0,uv);
+
+    // UGLY!!! I need to go back to my math!! I guess I should start by finding plane at end of line
+    if (vec0[2]*vec0[2] > vec0[0]*vec0[0] &&
+	vec0[2]*vec0[2] > vec0[1]*vec0[1]) {  // close to vertical => end in x-y plane
+      double step = (vecPer1[1]<0) ? 0.1 : -0.1;
+      int dir = (vecPer1[1]<0) ? 1 : -1;
+      while (vecPer1[1]*vecPer1[1] > 0.00001) {
+	rotateAround(uv, step, vecPer1);
+	rotateAround(uv, step, vecPer2);
+	if (((vecPer1[1]<0) ? 1 : -1) != dir) {
+	  dir = -dir;
+	  step /= 10;
+	}
+      }
+    } else if (vec0[0]*vec0[0] > vec0[2]*vec0[2] &&
+	       vec0[0]*vec0[0] > vec0[1]*vec0[1]) {  // close to X-axis => y-z plane
+      double step = (vecPer1[1]<0) ? 0.1 : -0.1;
+      int dir = (vecPer1[1]<0) ? 1 : -1;
+      while (vecPer1[1]*vecPer1[1] > 0.00001) {
+	rotateAround(uv, step, vecPer1);
+	rotateAround(uv, step, vecPer2);
+	if (((vecPer1[1]<0) ? 1 : -1) != dir) {
+	  dir = -dir;
+	  step /= 10;
+	}
+      }
+    } else  {  // close to Y-axis => x-z plane
+      double step = (vecPer1[0]<0) ? 0.1 : -0.1;
+      int dir = (vecPer1[0]<0) ? 1 : -1;
+      while (vecPer1[0]*vecPer1[0] > 0.00001) {
+	rotateAround(uv, step, vecPer1);
+	rotateAround(uv, step, vecPer2);
+	if (((vecPer1[0]<0) ? 1 : -1) != dir) {
+	  dir = -dir;
+	  step /= 10;
+	}
+      }
+    }
+    /*
+    rotateAround(uv, angle, vecPer1);
+    rotateAround(uv, angle, vecPer2);
+    angle += 0.2;
+    */
+    printf("Vec': %5.2f, %5.2f, %5.2f\n", vecPer1[0], vecPer1[1], vecPer1[2]);
+  } else {  // endStrategy == HOR_OR_VER
+    printf("HOR_OR_VEC\n");
+    // Depending on position
+    if (vec0[2]*vec0[2] > vec0[0]*vec0[0] &&
+	vec0[2]*vec0[2] > vec0[1]*vec0[1]) {  // close to vertical => end in x-y plane
+      vecPer1[0] = 1.0;
+      vecPer1[1] = 0.0;
+      vecPer1[2] = 0.0;
+      vecPer2[0] = 0.0;
+      vecPer2[1] = 1.0;
+      vecPer2[2] = 0.0;    
+    } else if (vec0[0]*vec0[0] > vec0[2]*vec0[2] &&
+	       vec0[0]*vec0[0] > vec0[1]*vec0[1]) {  // close to X-axis => y-z plane
+      vecPer1[0] = 0.0;
+      vecPer1[1] = 1.0;
+      vecPer1[2] = 0.0;
+      vecPer2[0] = 0.0;
+      vecPer2[1] = 0.0;
+      vecPer2[2] = 1.0;    
+    } else  {  // close to Y-axis => x-z plane
+      vecPer1[0] = 1.0;
+      vecPer1[1] = 0.0;
+      vecPer1[2] = 0.0;
+      vecPer2[0] = 0.0;
+      vecPer2[1] = 0.0;
+      vecPer2[2] = 1.0;
+    }
   }
-  calculateNormal(vec0, vecTmp, vecPer1);
-  calculateNormal(vec0, vecPer1, vecPer2);  
   scaleToUnit(vecPer1, vecPer1);
   scaleToUnit(vecPer2, vecPer2);
+  
 
   /*
    * Continue with wid/2 at both ends.
@@ -378,6 +519,7 @@ triangle *createStick(double points[ ][3], double wid ) {
   */
 
   /* Now, with these perpendicular vectors we make a box */
+  /*
   for (i=0; i<3; ++i) {
     box[0][i] = points[0][i] + wid * vecPer1[i];   
     box[1][i] = points[0][i] + wid * vecPer2[i];   
@@ -389,12 +531,25 @@ triangle *createStick(double points[ ][3], double wid ) {
     box[6][i] = points[1][i] - wid * vecPer1[i];   
     box[7][i] = points[1][i] - wid * vecPer2[i];   
   }
+  */
+  for (i=0; i<3; ++i) {
+    box[0][i] = points[0][i] + wid*vecPer1[i] + wid*vecPer2[i];   
+    box[1][i] = points[0][i] + wid*vecPer1[i] - wid*vecPer2[i];   
+    box[2][i] = points[0][i] - wid*vecPer1[i] - wid*vecPer2[i];   
+    box[3][i] = points[0][i] - wid*vecPer1[i] + wid*vecPer2[i];   
+
+    box[4][i] = points[1][i] + wid*vecPer1[i] + wid*vecPer2[i];   
+    box[5][i] = points[1][i] + wid*vecPer1[i] - wid*vecPer2[i];   
+    box[6][i] = points[1][i] - wid*vecPer1[i] - wid*vecPer2[i];   
+    box[7][i] = points[1][i] - wid*vecPer1[i] + wid*vecPer2[i];   
+  }
   return createBox(box);
 }
 
 
 /*
  * Create a line from point 1 to point 2. The line has "width" of wid. 
+ * OLD version
  */
 triangle *create3DLine(double x1, double y1, double z1,
 		       double x2, double y2, double z2,
@@ -406,7 +561,24 @@ triangle *create3DLine(double x1, double y1, double z1,
   data[1][0] = x2;
   data[1][1] = y2;
   data[1][2] = z2;
-  return createStick(data, wid);
+  return createStick(data, wid, RANDOM);
+}
+
+/*
+ * Create a line from point 1 to point 2. The line has "width" of wid. 
+ * NEW version
+ */
+triangle *createLine(double x1, double y1, double z1,
+		       double x2, double y2, double z2,
+		     double wid, endtype endStrategy ) {
+  double data[2][3];
+  data[0][0] = x1;
+  data[0][1] = y1;
+  data[0][2] = z1;
+  data[1][0] = x2;
+  data[1][1] = y2;
+  data[1][2] = z2;
+  return createStick(data, wid, endStrategy);
 }
 
 uint32_t nPushed = 0;
@@ -456,6 +628,40 @@ void pushTriangles(uint32_t n, triangle *trs) {
   }
 
 } 
+
+
+// Move along Z-axis so that mininum Z is 0.0
+void movePushedTrianglesToZeroLevel() {
+  struct pushedBlock *block = pushedRoot;
+  double min = 20e10, thisZ;
+  int i,j;
+  //Phase 1: calculate min
+  while (block != NULL) {
+    for (i=0; i<block->n; ++i) {
+      thisZ = block->trs[i].vertex1[2];
+      if (thisZ < min) min = thisZ;
+      thisZ = block->trs[i].vertex2[2];
+      if (thisZ < min) min = thisZ;
+      thisZ = block->trs[i].vertex3[2];
+      if (thisZ < min) min = thisZ;
+    }
+    block = block->next;
+  }
+  if (debug) {
+    printf("Min=%6.2f\n", min);
+  }
+  //Phase 2: move
+  block = pushedRoot;
+  while (block != NULL) {
+    for (i=0; i<block->n; ++i) {
+      block->trs[i].vertex1[2] -= min;
+      block->trs[i].vertex2[2] -= min;
+      block->trs[i].vertex3[2] -= min;
+     }
+    block = block->next;
+  }
+}
+
 
 void writeAllPushedTriangles(FILE *f) {
   struct pushedBlock *block = pushedRoot;

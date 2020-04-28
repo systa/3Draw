@@ -19,6 +19,7 @@ typedef struct {
   uint16_t attrByteCount;
 }  triangle;
 
+typedef enum { RANDON, HOR_OR_VER } endtype;
 
 // Read and ignore the 80-byte header of the input (STL) file.
 void skipPrefix(FILE *f);
@@ -48,13 +49,28 @@ triangle *createBox(double points[ ][3] );
  * Returns a pointer to an array of 12 triangles. This array has been dynamically
  * allocated from the heap. Deletion - if needed - is reponsibility of caller.
  * Typically, there should not be a need.
+ * OLD VERSION
  */
 triangle *create3DLine(double x1, double y1, double z1,
 		       double x2, double y2, double z2,
 		       double wid );
 
+/*
+ * Create a 3d-line (stick) from point 1 to point 2. The line has "width" of wid. 
+ * Returns a pointer to an array of 12 triangles. This array has been dynamically
+ * allocated from the heap. Deletion - if needed - is reponsibility of caller.
+ * Typically, there should not be a need.
+ * NEW VERSION
+ */
+triangle *createLine(double x1, double y1, double z1,
+		       double x2, double y2, double z2,
+		     double wid, endtype endStrategy );
+
 // Push n triangles to an internal stack for later use.
 void pushTriangles(uint32_t n, triangle *trs);
+
+// Move along Z-axis so that mininum Z is 0.0
+void movePushedTrianglesToZeroLevel();
 
 // Write all pushed triangles to a file
 // Note: these are ALL triangles put to the file.
