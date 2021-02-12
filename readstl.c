@@ -163,7 +163,7 @@ main (int argc, char *argv[]) {
     exit (1);
   }
   if ((f = fopen(argv[1], "r")) == NULL) {
-    fprintf(stderr, "Cannot open %s\n", argv[1]);
+    fprintf(stderr, "Cannot open %s, sorry\n", argv[1]);
     exit (1);
   }
   skipPrefix(f);
